@@ -67,7 +67,7 @@ console.log(hashedPassword);
 
  const existingUser = await conn.findOne({where: {email}})
 
-if (existingUser.length>0) {
+if (existingUser) {
   errors.push({ msg: 'Email already exists' });
   return res.render('register', { errors });
 }
