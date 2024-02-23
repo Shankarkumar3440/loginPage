@@ -3,9 +3,12 @@ const express = require('express');
 const app = express();
 const conn = require('./storageData');
 const bcrypt = require('bcrypt');
-const flash = require('express-flash');
 const session = require('express-session');
+const flash = require('express-flash');
+const passport = require('passport');
 
+const initialize = require('./passportConfig');
+initialize(passport);
 const port = process.env.PORT || 3005;
 
 app.set('view engine', 'ejs');
@@ -16,7 +19,8 @@ app.use(session({
     resave: false,
     saveUninitialized: false
 }))
-
+app.use(passport.initialize());
+app.use(passport.session());
 app.use(flash());
 
 app.get('/', (req, res) => {
@@ -58,32 +62,68 @@ if (errors.length>0) {
       }
    else{
     // form validaton has passed
-let hashedPassword = await bcrypt.hash(password, 10);
-console.log(hashedPassword);
+ try {
+        // Ensure that the connection is established before using it
+        await conn.sync({ force: false });
 
-// const existingUser = await conn.findOne({ where: { email } });
-// const existingUser = await conn.where('SELECT * FROM users WHERE email = ?', [email]);
-// const existingUser = await conn.create('SELECT name, email, password FROM users WHERE email = ?', [email]);
+        const hashedPassword = await bcrypt.hash(password, 10);
+        console.log(hashedPassword);
 
- const existingUser = await conn.findOne({where: {email}})
+        conn.query(`SELECT * FROM users WHERE email = '${email}'`, [email], async (err, results) => {
+            if (err || !results.rows.length) {
+                throw err;
+            }
+            if (results.rows.length > 0) {
+                errors.push({ msg: 'Email already exists' });
+                return res.render('register', { errors });
+                
+            }else{
+                conn.query(`INSERT INTO users (name, email, password) VALUES ('${name}', '${email}', '${hashedPassword}')`, [name, email, hashedPassword]),
+                (err, results) => {
+                    if (err) {
+                        throw err;
+                    }
+                    console.log(results.rows);
+                        req.flash('User created successfully:', results);
+                }
+            }
+        })
 
-if (existingUser) {
-  errors.push({ msg: 'Email already exists' });
-  return res.render('register', { errors });
-}
-else{
-conn.create(`INSERT INTO users (name, email, password) VALUES ('${name}', '${email}', '${hashedPassword}')`);
-(err, results) => {
-    if (err) {
-        throw err;
-    }   
-    console.log(results.rows);
-    req.flash('success_msg', 'You are now registered and can log in');
-    res.redirect('/users/login');
-}
-}
+        if (existingUser) {
+            errors.push({ msg: 'Email already exists' });
+            return res.render('register', { errors });
         }
- });
+
+        const user = await conn.create({
+            name,
+            email,
+            password: hashedPassword
+        });
+
+        console.log('User created successfully:', user);
+
+        req.flash('success_msg', 'You are now registered and can log in');
+        res.redirect('/users/login');
+    } catch (error) {
+        if (error instanceof Sequelize.ValidationError) {
+            const errors = error.errors.map(err => ({
+                message: err.message,
+                type: err.type,
+                path: err.path,
+            }));
+            console.error('Validation Errors:', errors);
+            return res.render('register', { errors });
+        }
+
+        console.error('Error creating user:', error);
+        res.status(500).send('Internal Server Error');
+    }
+}});
+app.post('/users/login', passport.authenticate('local', {
+    successRedirect: '/users/dashboard',
+    failureRedirect: '/users/login',
+    failureFlash: false
+}));
 
 conn.sync({force:false}).then(result =>{
     app.listen(port, ()=>{
@@ -91,4 +131,7 @@ conn.sync({force:false}).then(result =>{
     })
 }).catch(err=>{
     console.log(err);
+
 }); 
+   
+   

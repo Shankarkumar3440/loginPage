@@ -13,6 +13,11 @@
         <li><%= messages.success_msg %></li>
     <% } %>
 </ul>
+<ul>
+    <% if(messages.error ) { %>
+        <li><%= messages.error %></li>
+    <% } %>
+</ul>
 
 <form action="/users/login" method="POST">
         <div>
